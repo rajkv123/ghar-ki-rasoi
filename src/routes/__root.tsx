@@ -1,10 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  createRootRoute,
-  HeadContent,
-  Outlet,
-  Scripts,
-} from "@tanstack/react-router";
+import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Toaster } from "sonner";
@@ -31,7 +26,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Gharaunda Rasoi — a home kitchen in Bengaluru. Daily thalis, weekly state specials, calorie cards, UPI, and live delivery from our hearth.",
+          "Gharaunda Rasoi in Begur, Bengaluru. Daily thalis and Bihar and Uttar Pradesh a la carte specials, with calorie cards and home delivery.",
       },
       { name: "theme-color", content: "#9A3B24" },
     ],

@@ -5,16 +5,13 @@ import { DishCard, SpecialStrip } from "@/components/dish-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { A_LA_CARTE_STATES, DAILY_BOARD_STATES } from "@/lib/kitchen/catalog";
 import { getCatalog, getKitchen, getPlans } from "@/lib/kitchen/server";
 import { formatInr, SITE_LOCATION } from "@/lib/kitchen/format";
 
 export const Route = createFileRoute("/")({
   loader: async () => {
-    const [kitchen, catalog, plans] = await Promise.all([
-      getKitchen(),
-      getCatalog(),
-      getPlans(),
-    ]);
+    const [kitchen, catalog, plans] = await Promise.all([getKitchen(), getCatalog(), getPlans()]);
     return { kitchen, catalog, plans };
   },
   component: Home,
@@ -22,19 +19,19 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { kitchen, catalog, plans } = Route.useLoaderData();
-  const specials = catalog.filter((d) => d.is_weekly_special);
-  const daily = catalog.filter((d) => !d.is_weekly_special).slice(0, 4);
+  const specials = catalog.filter(
+    (d) => d.is_weekly_special && A_LA_CARTE_STATES.has(d.state_origin),
+  );
+  const daily = catalog
+    .filter((d) => !d.is_weekly_special && DAILY_BOARD_STATES.has(d.state_origin))
+    .slice(0, 4);
   const starter = plans[0];
 
   return (
     <div>
       <section className="relative overflow-hidden">
         <div className="absolute inset-0">
-          <img
-            src="/dishes/hero-kitchen.jpg"
-            alt=""
-            className="size-full object-cover"
-          />
+          <img src="/dishes/hero-kitchen.jpg" alt="" className="size-full object-cover" />
           <div className="absolute inset-0 bg-[linear-gradient(to_right,color-mix(in_oklab,var(--tg-bg)_88%,transparent)_0%,color-mix(in_oklab,var(--tg-bg)_55%,transparent)_55%,color-mix(in_oklab,var(--tg-bg)_28%,transparent)_100%)]" />
         </div>
         <div className="relative mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-[1.1fr_0.9fr]">
@@ -44,8 +41,8 @@ function Home() {
               State feasts, cooked at home, delivered warm.
             </h1>
             <p className="text-base text-muted sm:text-lg">
-              {kitchen.tagline} Daily boards from Gharaunda Rasoi, Begur, weekly
-              A La Carte from Karnataka, Bihar, UP.
+              {kitchen.tagline} Daily boards from Gharaunda Rasoi, Begur. Weekly a la carte from
+              Bihar and Uttar Pradesh.
             </p>
             <div className="flex flex-wrap gap-3">
               <Button asChild>
@@ -75,10 +72,8 @@ function Home() {
       <section className="mx-auto max-w-6xl space-y-4 px-4 py-12 sm:px-6">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">
-              This week
-            </p>
-            <h2 className="mt-1 font-display text-3xl">A la carte state specials</h2>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">This week</p>
+            <h2 className="mt-1 font-display text-3xl">Bihar & Uttar Pradesh specials</h2>
           </div>
           <Link to="/specials" className="text-sm font-medium underline-offset-4 hover:underline">
             All specials
@@ -101,11 +96,7 @@ function Home() {
         </div>
         <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {daily.map((item) => (
-            <DishCard
-              key={item.id}
-              item={item}
-              onAdded={(d) => toast(`Added ${d.name}`)}
-            />
+            <DishCard key={item.id} item={item} onAdded={(d) => toast(`Added ${d.name}`)} />
           ))}
         </div>
       </section>

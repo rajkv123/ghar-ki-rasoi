@@ -85,16 +85,32 @@ function AccountPage() {
             <p className="text-sm text-muted">
               {formatInr(sub.plan.price_paise)} · {sub.plan.calories_per_day} kcal / day
             </p>
-            <Button
-              variant="outline"
-              onClick={async () => {
-                await pauseSubscription();
-                toast("Subscription paused");
-                void subQ.refetch();
-              }}
-            >
-              Pause plan
-            </Button>
+            {sub.status === "pending_payment" ? (
+              <p className="text-sm text-muted" role="status">
+                {sub.payment_ref
+                  ? "Payment reference submitted; your plan will activate after the kitchen verifies the payment."
+                  : "Payment has not been submitted. Return to the "}
+                {!sub.payment_ref && (
+                  <>
+                    <Link to="/subscribe" className="underline-offset-4 hover:underline">
+                      subscription page
+                    </Link>{" "}
+                    to choose a plan and continue.
+                  </>
+                )}
+              </p>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  await pauseSubscription();
+                  toast("Subscription paused");
+                  void subQ.refetch();
+                }}
+              >
+                Pause plan
+              </Button>
+            )}
           </div>
         ) : (
           <p className="mt-2 text-sm text-muted">
@@ -193,7 +209,11 @@ function AccountPage() {
         <ul className="mt-3 space-y-2 text-sm">
           {(ordersQ.data ?? []).slice(0, 5).map((o) => (
             <li key={o.id}>
-              <Link to="/orders/$id" params={{ id: String(o.id) }} className="underline-offset-4 hover:underline">
+              <Link
+                to="/orders/$id"
+                params={{ id: String(o.id) }}
+                className="underline-offset-4 hover:underline"
+              >
                 Order {o.id} · {formatInr(o.total_paise)}
               </Link>
             </li>

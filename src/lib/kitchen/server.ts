@@ -2,11 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { SEED_DISHES } from "@/lib/kitchen/catalog";
-import {
-  deliveryFeePaise,
-  haversineKm,
-  rideMinutes,
-} from "@/lib/kitchen/geo";
+import { deliveryFeePaise, haversineKm, rideMinutes } from "@/lib/kitchen/geo";
 import { isoFromUnknown, SITE_LOCATION, todayIsoDate } from "@/lib/kitchen/format";
 import { sumMacros } from "@/lib/kitchen/calories";
 import type {
@@ -18,6 +14,7 @@ import type {
   Order,
   OrderItem,
   OrderStatus,
+  PendingSubscriptionPayment,
   Plan,
   Profile,
   Subscription,
@@ -87,6 +84,8 @@ function mapKitchen(row: Record<string, unknown>): KitchenPublic {
     phone: String(row.phone),
     upi_vpa: String(row.upi_vpa),
     upi_name: String(row.upi_name),
+    subscription_upi_vpa: String(row.subscription_upi_vpa),
+    subscription_upi_name: String(row.subscription_upi_name),
     licence_number: String(row.licence_number),
     licence_type: String(row.licence_type),
     licence_authority: String(row.licence_authority),
@@ -171,9 +170,7 @@ async function ensureSeeded(): Promise<void> {
   if (!seedPromise) {
     seedPromise = (async () => {
       const sql = await getSql();
-      const count = await sql.query<{ n: number }>(
-        "select count(*)::int as n from menu_items",
-      );
+      const count = await sql.query<{ n: number }>("select count(*)::int as n from menu_items");
       if ((count[0]?.n ?? 0) > 0) return;
       const today = todayIsoDate();
       for (const dish of SEED_DISHES) {
@@ -241,9 +238,7 @@ async function requireStaff(userId: string): Promise<string> {
   return role;
 }
 
-async function ordersWithItems(
-  orderRows: Record<string, unknown>[],
-): Promise<Order[]> {
+async function ordersWithItems(orderRows: Record<string, unknown>[]): Promise<Order[]> {
   if (orderRows.length === 0) return [];
   const sql = await getSql();
   const ids = orderRows.map((r) => asNum(r.id));
@@ -294,9 +289,7 @@ export const getKitchenRole = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<KitchenRole> => {
     const sql = await getSql();
     const role = await staffRole(context.userId);
-    const count = await sql.query<{ n: number }>(
-      "select count(*)::int as n from kitchen_staff",
-    );
+    const count = await sql.query<{ n: number }>("select count(*)::int as n from kitchen_staff");
     return {
       role: (role as KitchenRole["role"]) ?? null,
       canClaim: (count[0]?.n ?? 0) === 0,
@@ -307,18 +300,15 @@ export const claimKitchen = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await getSql();
-    const count = await sql.query<{ n: number }>(
-      "select count(*)::int as n from kitchen_staff",
-    );
+    const count = await sql.query<{ n: number }>("select count(*)::int as n from kitchen_staff");
     if ((count[0]?.n ?? 0) > 0) {
       const existing = await staffRole(context.userId);
       if (!existing) throw new Error("This kitchen already has an owner");
       return { role: existing };
     }
-    await sql.query(
-      "insert into kitchen_staff (user_id, role) values ($1, 'owner')",
-      [context.userId],
-    );
+    await sql.query("insert into kitchen_staff (user_id, role) values ($1, 'owner')", [
+      context.userId,
+    ]);
     return { role: "owner" };
   });
 
@@ -388,8 +378,8 @@ export const getMySubscription = createServerFn({ method: "GET" })
     const rows = await sql.query<Record<string, unknown>>(
       `select s.*, p.slug as plan_slug from subscriptions s
        join subscription_plans p on p.id = s.plan_id
-       where s.user_id = $1 and s.status = 'active'
-       order by s.id desc limit 1`,
+       where s.user_id = $1 and s.status in ('active', 'pending_payment')
+       order by case when s.status = 'active' then 0 else 1 end, s.id desc limit 1`,
       [context.userId],
     );
     if (!rows[0]) return null;
@@ -405,11 +395,12 @@ export const getMySubscription = createServerFn({ method: "GET" })
       started_at: isoFromUnknown(rows[0].started_at) ?? "",
       renews_at: isoFromUnknown(rows[0].renews_at) ?? "",
       last_paid_at: isoFromUnknown(rows[0].last_paid_at),
+      payment_ref: rows[0].payment_ref ? String(rows[0].payment_ref) : null,
       plan: planRows[0] ? mapPlan(planRows[0]) : null,
     };
   });
 
-export const startSubscription = createServerFn({ method: "POST" })
+export const createPendingSubscription = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((planId: number) => planId)
   .handler(async ({ context, data: planId }) => {
@@ -420,17 +411,86 @@ export const startSubscription = createServerFn({ method: "POST" })
     );
     if (!plans[0]) throw new Error("Plan not found");
     await sql.query(
-      "update subscriptions set status = 'cancelled' where user_id = $1 and status = 'active'",
+      "update subscriptions set status = 'cancelled' where user_id = $1 and status = 'pending_payment'",
       [context.userId],
     );
-    const renews = new Date();
-    renews.setDate(renews.getDate() + 30);
     const inserted = await sql.query<{ id: number }>(
-      `insert into subscriptions (user_id, plan_id, status, renews_at, last_paid_at)
-       values ($1,$2,'active',$3,now()) returning id`,
-      [context.userId, planId, renews.toISOString()],
+      `insert into subscriptions (user_id, plan_id, status, renews_at)
+       values ($1,$2,'pending_payment',now() + interval '30 days') returning id`,
+      [context.userId, planId],
     );
     return { id: inserted[0]?.id ?? 0 };
+  });
+
+export const submitSubscriptionPayment = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((data: { subscriptionId: number; payment_ref: string }) => data)
+  .handler(async ({ context, data }) => {
+    const ref = data.payment_ref.trim();
+    if (ref.length < 6 || ref.length > 100) {
+      throw new Error("Enter a valid UPI reference / UTR");
+    }
+    const sql = await getSql();
+    const rows = await sql.query<{ id: number }>(
+      `update subscriptions
+       set payment_ref = $1, payment_submitted_at = now()
+       where id = $2 and user_id = $3 and status = 'pending_payment'
+       returning id`,
+      [ref, data.subscriptionId, context.userId],
+    );
+    if (!rows[0]) throw new Error("Subscription is not waiting for payment");
+    return { ok: true };
+  });
+
+export const listPendingSubscriptionPayments = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<PendingSubscriptionPayment[]> => {
+    await requireStaff(context.userId);
+    const sql = await getSql();
+    const rows = await sql.query<Record<string, unknown>>(
+      `select s.id, s.user_id, s.payment_ref, s.payment_submitted_at,
+              p.name as plan_name, p.price_paise, pr.display_name, pr.phone
+       from subscriptions s
+       join subscription_plans p on p.id = s.plan_id
+       left join profiles pr on pr.user_id = s.user_id
+       where s.status = 'pending_payment' and s.payment_ref is not null
+       order by s.payment_submitted_at desc`,
+    );
+    return rows.map((row) => ({
+      id: asNum(row.id),
+      user_id: String(row.user_id),
+      display_name: row.display_name ? String(row.display_name) : null,
+      phone: row.phone ? String(row.phone) : null,
+      payment_ref: String(row.payment_ref),
+      payment_submitted_at: isoFromUnknown(row.payment_submitted_at),
+      plan_name: String(row.plan_name),
+      price_paise: asNum(row.price_paise),
+    }));
+  });
+
+export const confirmSubscriptionPayment = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((subscriptionId: number) => subscriptionId)
+  .handler(async ({ context, data: subscriptionId }) => {
+    await requireStaff(context.userId);
+    const sql = await getSql();
+    const rows = await sql.query<{ user_id: string }>(
+      `with target as (
+         select user_id from subscriptions
+         where id = $1 and status = 'pending_payment' and payment_ref is not null
+       ), cancelled as (
+         update subscriptions set status = 'cancelled'
+         where user_id = (select user_id from target) and status = 'active'
+       )
+       update subscriptions
+       set status = 'active', started_at = now(),
+           renews_at = now() + interval '30 days', last_paid_at = now()
+       where id = $1 and status = 'pending_payment' and payment_ref is not null
+       returning user_id`,
+      [subscriptionId],
+    );
+    if (!rows[0]) throw new Error("Subscription payment is no longer pending");
+    return { ok: true };
   });
 
 export const pauseSubscription = createServerFn({ method: "POST" })
@@ -569,18 +629,36 @@ export const submitUpiRef = createServerFn({ method: "POST" })
   .validator((data: { orderId: number; payment_ref: string }) => data)
   .handler(async ({ context, data }) => {
     const ref = data.payment_ref.trim();
-    if (ref.length < 6) throw new Error("Enter the UPI reference / UTR");
+    if (ref.length < 6 || ref.length > 100) {
+      throw new Error("Enter a valid UPI reference / UTR");
+    }
     const sql = await getSql();
     const rows = await sql.query<Record<string, unknown>>(
       `update orders
-       set payment_ref = $1, status = 'paid', paid_at = now()
+       set payment_ref = $1
        where id = $2 and user_id = $3 and status = 'pending_payment'
        returning *`,
       [ref, data.orderId, context.userId],
     );
-    if (!rows[0]) throw new Error("Order not waiting for payment");
-    const [order] = await ordersWithItems(rows);
-    return order;
+    if (!rows[0]) throw new Error("Order is not waiting for payment");
+    return { ok: true };
+  });
+
+export const confirmOrderPayment = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((orderId: number) => orderId)
+  .handler(async ({ context, data: orderId }) => {
+    await requireStaff(context.userId);
+    const sql = await getSql();
+    const rows = await sql.query<{ id: number }>(
+      `update orders
+       set status = 'paid', paid_at = now()
+       where id = $1 and status = 'pending_payment' and payment_ref is not null
+       returning id`,
+      [orderId],
+    );
+    if (!rows[0]) throw new Error("Order has no payment reference awaiting verification");
+    return { ok: true };
   });
 
 export const listMyOrders = createServerFn({ method: "GET" })
@@ -601,10 +679,7 @@ export const getMyOrder = createServerFn({ method: "GET" })
     const sql = await getSql();
     const role = await staffRole(context.userId);
     const rows = role
-      ? await sql.query<Record<string, unknown>>(
-          "select * from orders where id = $1",
-          [orderId],
-        )
+      ? await sql.query<Record<string, unknown>>("select * from orders where id = $1", [orderId])
       : await sql.query<Record<string, unknown>>(
           "select * from orders where id = $1 and user_id = $2",
           [orderId, context.userId],
@@ -703,7 +778,8 @@ export const saveMenuItem = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await requireStaff(context.userId);
     if (!data.name.trim()) throw new Error("Name is required");
-    if (data.image_url.length > 450_000) throw new Error("Image is too large — try a smaller photo");
+    if (data.image_url.length > 450_000)
+      throw new Error("Image is too large — try a smaller photo");
     const price = Math.round(data.price_rupees * 100);
     const sql = await getSql();
     if (data.id) {
@@ -815,6 +891,8 @@ type SettingsInput = {
   phone: string;
   upi_vpa: string;
   upi_name: string;
+  subscription_upi_vpa: string;
+  subscription_upi_name: string;
   licence_number: string;
   licence_type: string;
   licence_authority: string;
@@ -837,9 +915,10 @@ export const saveKitchenSettings = createServerFn({ method: "POST" })
     await sql.query(
       `update kitchen_settings set
         tagline=$1, address_line=$2, city=$3, pincode=$4, lat=$5, lng=$6, phone=$7,
-        upi_vpa=$8, upi_name=$9, licence_number=$10, licence_type=$11, licence_authority=$12,
-        licence_valid_from=$13, licence_valid_until=$14, licence_image_url=$15,
-        avg_prep_minutes=$16, delivery_radius_km=$17, default_theme=$18, about=$19
+        upi_vpa=$8, upi_name=$9, subscription_upi_vpa=$10, subscription_upi_name=$11,
+        licence_number=$12, licence_type=$13, licence_authority=$14,
+        licence_valid_from=$15, licence_valid_until=$16, licence_image_url=$17,
+        avg_prep_minutes=$18, delivery_radius_km=$19, default_theme=$20, about=$21
        where id = 1`,
       [
         data.tagline.trim(),
@@ -851,6 +930,8 @@ export const saveKitchenSettings = createServerFn({ method: "POST" })
         data.phone.trim(),
         data.upi_vpa.trim(),
         data.upi_name.trim(),
+        data.subscription_upi_vpa.trim(),
+        data.subscription_upi_name.trim(),
         data.licence_number.trim(),
         data.licence_type.trim(),
         data.licence_authority.trim(),

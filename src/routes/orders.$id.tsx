@@ -24,7 +24,8 @@ function OrderDetailPage() {
     queryFn: () => getMyOrder({ data: orderId }),
     enabled: !!user && Number.isFinite(orderId),
     refetchInterval: (query) => {
-      const status = query.state.data?.order.status;
+      const { status, payment_ref } = query.state.data?.order ?? {};
+      if (status === "pending_payment" && payment_ref) return 8000;
       return status === "out_for_delivery" || status === "preparing" ? 8000 : false;
     },
   });
@@ -60,9 +61,7 @@ function OrderDetailPage() {
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">
           {orderCode(order.id)}
         </p>
-        <h1 className="mt-1 font-display text-4xl">
-          {ORDER_STATUS_LABEL[order.status]}
-        </h1>
+        <h1 className="mt-1 font-display text-4xl">{ORDER_STATUS_LABEL[order.status]}</h1>
         <p className="mt-1 text-sm text-muted tabular-nums">
           {formatInr(order.total_paise)} · {order.eta_minutes} min window
         </p>

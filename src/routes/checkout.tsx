@@ -85,7 +85,7 @@ function CheckoutPage() {
       <div>
         <h1 className="font-display text-4xl">Checkout</h1>
         <p className="mt-2 text-sm text-muted">
-          Meals leave {kitchen.address_line}. Pin a neighbourhood we ride to.
+          Meals leave Gharaunda Rasoi · 560068. Pin a neighbourhood we ride to.
         </p>
         {lines.length === 0 ? (
           <p className="mt-6">
@@ -135,7 +135,12 @@ function CheckoutPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+                <Input
+                  id="phone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                />
               </div>
             </div>
             <div className="space-y-1.5">

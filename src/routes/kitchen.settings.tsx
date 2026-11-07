@@ -28,6 +28,8 @@ function KitchenSettingsPage() {
     phone: "",
     upi_vpa: "",
     upi_name: "",
+    subscription_upi_vpa: "",
+    subscription_upi_name: "",
     licence_number: "",
     licence_type: "",
     licence_authority: "",
@@ -52,6 +54,8 @@ function KitchenSettingsPage() {
       phone: k.phone,
       upi_vpa: k.upi_vpa,
       upi_name: k.upi_name,
+      subscription_upi_vpa: k.subscription_upi_vpa,
+      subscription_upi_name: k.subscription_upi_name,
       licence_number: k.licence_number,
       licence_type: k.licence_type,
       licence_authority: k.licence_authority,
@@ -83,7 +87,11 @@ function KitchenSettingsPage() {
     >
       <Card className="space-y-3 p-5">
         <h2 className="font-display text-xl">Hearth</h2>
-        <Field label="Tagline" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} />
+        <Field
+          label="Tagline"
+          value={form.tagline}
+          onChange={(v) => setForm({ ...form, tagline: v })}
+        />
         <Field
           label="Address"
           value={form.address_line}
@@ -129,6 +137,22 @@ function KitchenSettingsPage() {
           label="Payee name"
           value={form.upi_name}
           onChange={(v) => setForm({ ...form, upi_name: v })}
+        />
+      </Card>
+      <Card className="space-y-3 p-5">
+        <h2 className="font-display text-xl">Subscription UPI</h2>
+        <p className="text-sm text-muted">
+          Subscription QR codes use this recipient and include the selected plan amount.
+        </p>
+        <Field
+          label="Subscription UPI VPA"
+          value={form.subscription_upi_vpa}
+          onChange={(v) => setForm({ ...form, subscription_upi_vpa: v })}
+        />
+        <Field
+          label="Subscription payee name"
+          value={form.subscription_upi_name}
+          onChange={(v) => setForm({ ...form, subscription_upi_name: v })}
         />
       </Card>
       <Card className="space-y-3 p-5">

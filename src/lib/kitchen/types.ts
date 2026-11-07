@@ -9,6 +9,8 @@ export type KitchenPublic = {
   phone: string;
   upi_vpa: string;
   upi_name: string;
+  subscription_upi_vpa: string;
+  subscription_upi_name: string;
   licence_number: string;
   licence_type: string;
   licence_authority: string;
@@ -79,16 +81,23 @@ export type Subscription = {
   started_at: string;
   renews_at: string;
   last_paid_at: string | null;
+  payment_ref: string | null;
   plan: Plan | null;
 };
 
+export type PendingSubscriptionPayment = {
+  id: number;
+  user_id: string;
+  display_name: string | null;
+  phone: string | null;
+  payment_ref: string;
+  payment_submitted_at: string | null;
+  plan_name: string;
+  price_paise: number;
+};
+
 export type OrderStatus =
-  | "pending_payment"
-  | "paid"
-  | "preparing"
-  | "out_for_delivery"
-  | "delivered"
-  | "cancelled";
+  "pending_payment" | "paid" | "preparing" | "out_for_delivery" | "delivered" | "cancelled";
 
 export type OrderItem = {
   id: number;

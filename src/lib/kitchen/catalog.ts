@@ -34,6 +34,9 @@ export const INDIAN_STATES = [
   "Odisha",
 ] as const;
 
+export const A_LA_CARTE_STATES = new Set(["Bihar", "Uttar Pradesh"]);
+export const DAILY_BOARD_STATES = new Set(["Karnataka", "Bihar", "Uttar Pradesh"]);
+
 export const SEED_DISHES: SeedDish[] = [
   {
     name: "Litti Chokha",
