@@ -1,0 +1,26 @@
+# Local workspace-only files
+.grok/
+.node_modules.lock
+
+# Dependencies and generated build output
+node_modules/
+.node_modules/
+dist/
+.tanstack/
+artifacts/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Editor and operating-system files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+node_modules
