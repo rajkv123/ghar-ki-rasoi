@@ -18,9 +18,17 @@ import type {
   Plan,
   Profile,
   Subscription,
+  SubscriptionStatus,
 } from "@/lib/kitchen/types";
 
 const STAFF_ROLES = new Set(["owner", "staff"]);
+const SUBSCRIPTION_STATUSES = new Set<SubscriptionStatus>([
+  "pending_payment",
+  "active",
+  "paused",
+  "expired",
+  "cancelled",
+]);
 
 function asBool(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
@@ -29,6 +37,29 @@ function asBool(value: unknown): boolean {
 function asNum(value: unknown, fallback = 0): number {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function isIsoDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function requireIsoDate(value: unknown, label: string): asserts value is string {
+  if (!isIsoDate(value)) throw new Error(`Choose a valid ${label}`);
+}
+
+function requirePositiveInteger(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`Choose a valid ${label}`);
+  }
+}
+
+function subscriptionStatus(value: unknown): SubscriptionStatus {
+  if (typeof value !== "string" || !SUBSCRIPTION_STATUSES.has(value as SubscriptionStatus)) {
+    throw new Error("Subscription has an unsupported status");
+  }
+  return value as SubscriptionStatus;
 }
 
 function mapItem(row: Record<string, unknown>): MenuItem {
@@ -375,11 +406,45 @@ export const getMySubscription = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }): Promise<Subscription | null> => {
     const sql = await getSql();
+    await sql.query(
+      `update subscriptions
+       set end_date = end_date + greatest(
+             0,
+             least(current_date, pause_to) - greatest(pause_from, start_date) + 1
+           ),
+           renews_at = (
+             end_date + greatest(
+               0,
+               least(current_date, pause_to) - greatest(pause_from, start_date) + 1
+             )
+           )::timestamptz,
+           status = 'active',
+           pause_from = null,
+           pause_to = null
+       where user_id = $1 and status in ('active', 'paused')
+         and pause_from is not null and pause_to < current_date`,
+      [context.userId],
+    );
+    await sql.query(
+      `update subscriptions set status = 'paused'
+       where user_id = $1 and status = 'active'
+         and pause_from <= current_date and pause_to >= current_date`,
+      [context.userId],
+    );
+    await sql.query(
+      `update subscriptions set status = 'expired'
+       where user_id = $1 and status = 'active' and end_date < current_date`,
+      [context.userId],
+    );
     const rows = await sql.query<Record<string, unknown>>(
       `select s.*, p.slug as plan_slug from subscriptions s
        join subscription_plans p on p.id = s.plan_id
-       where s.user_id = $1 and s.status in ('active', 'pending_payment')
-       order by case when s.status = 'active' then 0 else 1 end, s.id desc limit 1`,
+       where s.user_id = $1 and s.status in ('active', 'pending_payment', 'paused')
+       order by case
+         when s.status = 'active' then 0
+         when s.status = 'pending_payment' then 1
+         else 2
+       end, s.id desc limit 1`,
       [context.userId],
     );
     if (!rows[0]) return null;
@@ -391,9 +456,13 @@ export const getMySubscription = createServerFn({ method: "GET" })
       id: asNum(rows[0].id),
       user_id: String(rows[0].user_id),
       plan_id: asNum(rows[0].plan_id),
-      status: String(rows[0].status),
+      status: subscriptionStatus(rows[0].status),
       started_at: isoFromUnknown(rows[0].started_at) ?? "",
       renews_at: isoFromUnknown(rows[0].renews_at) ?? "",
+      start_date: String(rows[0].start_date).slice(0, 10),
+      end_date: String(rows[0].end_date).slice(0, 10),
+      pause_from: rows[0].pause_from ? String(rows[0].pause_from).slice(0, 10) : null,
+      pause_to: rows[0].pause_to ? String(rows[0].pause_to).slice(0, 10) : null,
       last_paid_at: isoFromUnknown(rows[0].last_paid_at),
       payment_ref: rows[0].payment_ref ? String(rows[0].payment_ref) : null,
       plan: planRows[0] ? mapPlan(planRows[0]) : null,
@@ -402,7 +471,10 @@ export const getMySubscription = createServerFn({ method: "GET" })
 
 export const createPendingSubscription = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((planId: number) => planId)
+  .validator((planId: number) => {
+    requirePositiveInteger(planId, "subscription plan");
+    return planId;
+  })
   .handler(async ({ context, data: planId }) => {
     const sql = await getSql();
     const plans = await sql.query<Record<string, unknown>>(
@@ -411,7 +483,9 @@ export const createPendingSubscription = createServerFn({ method: "POST" })
     );
     if (!plans[0]) throw new Error("Plan not found");
     await sql.query(
-      "update subscriptions set status = 'cancelled' where user_id = $1 and status = 'pending_payment'",
+      `update subscriptions
+       set status = 'cancelled', cancelled_at = now()
+       where user_id = $1 and status = 'pending_payment'`,
       [context.userId],
     );
     const inserted = await sql.query<{ id: number }>(
@@ -419,12 +493,21 @@ export const createPendingSubscription = createServerFn({ method: "POST" })
        values ($1,$2,'pending_payment',now() + interval '30 days') returning id`,
       [context.userId, planId],
     );
-    return { id: inserted[0]?.id ?? 0 };
+    const id = inserted[0]?.id;
+    if (!id) throw new Error("Could not create subscription");
+    return { id };
   });
 
 export const submitSubscriptionPayment = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((data: { subscriptionId: number; payment_ref: string }) => data)
+  .validator((data: { subscriptionId: number; payment_ref: string }) => {
+    if (!data || typeof data !== "object") throw new Error("Enter payment details");
+    requirePositiveInteger(data.subscriptionId, "subscription");
+    if (typeof data.payment_ref !== "string") {
+      throw new Error("Enter a valid UPI reference / UTR");
+    }
+    return data;
+  })
   .handler(async ({ context, data }) => {
     const ref = data.payment_ref.trim();
     if (ref.length < 6 || ref.length > 100) {
@@ -470,7 +553,10 @@ export const listPendingSubscriptionPayments = createServerFn({ method: "GET" })
 
 export const confirmSubscriptionPayment = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((subscriptionId: number) => subscriptionId)
+  .validator((subscriptionId: number) => {
+    requirePositiveInteger(subscriptionId, "subscription");
+    return subscriptionId;
+  })
   .handler(async ({ context, data: subscriptionId }) => {
     await requireStaff(context.userId);
     const sql = await getSql();
@@ -479,12 +565,14 @@ export const confirmSubscriptionPayment = createServerFn({ method: "POST" })
          select user_id from subscriptions
          where id = $1 and status = 'pending_payment' and payment_ref is not null
        ), cancelled as (
-         update subscriptions set status = 'cancelled'
-         where user_id = (select user_id from target) and status = 'active'
+         update subscriptions set status = 'cancelled', cancelled_at = now()
+         where user_id = (select user_id from target) and status in ('active', 'paused')
        )
        update subscriptions
        set status = 'active', started_at = now(),
-           renews_at = now() + interval '30 days', last_paid_at = now()
+           renews_at = now() + interval '30 days',
+           start_date = current_date, end_date = current_date + 30,
+           pause_from = null, pause_to = null, last_paid_at = now()
        where id = $1 and status = 'pending_payment' and payment_ref is not null
        returning user_id`,
       [subscriptionId],
@@ -493,14 +581,119 @@ export const confirmSubscriptionPayment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const pauseSubscription = createServerFn({ method: "POST" })
+export const cancelMySubscription = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((subscriptionId: number) => {
+    requirePositiveInteger(subscriptionId, "subscription");
+    return subscriptionId;
+  })
+  .handler(async ({ context, data: subscriptionId }) => {
+    const sql = await getSql();
+    const rows = await sql.query<{ id: number }>(
+      `update subscriptions
+       set status = 'cancelled', cancelled_at = now()
+       where id = $1 and user_id = $2
+         and status in ('pending_payment', 'active', 'paused')
+       returning id`,
+      [subscriptionId, context.userId],
+    );
+    if (!rows[0]) throw new Error("This subscription can no longer be cancelled");
+    return { ok: true };
+  });
+
+export const saveMySubscriptionDates = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((data: { start_date: string; end_date: string }) => {
+    if (!data || typeof data !== "object") throw new Error("Choose subscription dates");
+    return data;
+  })
+  .handler(async ({ context, data }) => {
+    requireIsoDate(data.start_date, "start date");
+    requireIsoDate(data.end_date, "end date");
+    if (data.start_date > data.end_date) {
+      throw new Error("The end date must be on or after the start date");
+    }
+    const sql = await getSql();
+    const rows = await sql.query<{ id: number }>(
+      `update subscriptions
+       set start_date = $1::date, end_date = $2::date,
+           renews_at = $2::date::timestamptz
+       where user_id = $3 and status in ('active', 'paused')
+         and $1::date <= current_date and $2::date >= current_date
+         and (pause_from is null or pause_from >= $1::date)
+         and (pause_to is null or pause_to <= $2::date)
+       returning id`,
+      [data.start_date, data.end_date, context.userId],
+    );
+    if (!rows[0]) {
+      throw new Error(
+        "Dates must include today and keep any scheduled pause within the subscription period",
+      );
+    }
+    return { ok: true };
+  });
+
+export const scheduleSubscriptionPause = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((data: { pause_from: string; pause_to: string }) => {
+    if (!data || typeof data !== "object") throw new Error("Choose pause dates");
+    return data;
+  })
+  .handler(async ({ context, data }) => {
+    requireIsoDate(data.pause_from, "pause start date");
+    requireIsoDate(data.pause_to, "pause end date");
+    if (data.pause_from > data.pause_to) {
+      throw new Error("The pause end date must be on or after the pause start date");
+    }
+    const sql = await getSql();
+    const rows = await sql.query<{ id: number }>(
+      `update subscriptions
+       set pause_from = $1::date, pause_to = $2::date,
+           status = case
+             when $1::date <= current_date and $2::date >= current_date then 'paused'
+             else 'active'
+           end
+       where user_id = $3 and status = 'active'
+         and $1::date >= current_date
+         and $1::date >= start_date and $2::date <= end_date
+       returning id`,
+      [data.pause_from, data.pause_to, context.userId],
+    );
+    if (!rows[0]) {
+      throw new Error("Pause dates must be today or later and fall within your subscription dates");
+    }
+    return { ok: true };
+  });
+
+export const resumeSubscription = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await getSql();
-    await sql.query(
-      "update subscriptions set status = 'paused' where user_id = $1 and status = 'active'",
+    const rows = await sql.query<{ id: number }>(
+      `update subscriptions
+       set end_date = end_date + case
+             when pause_from is null then 0
+             else greatest(
+               0,
+               least(current_date, pause_to) - greatest(pause_from, start_date) + 1
+             )
+           end,
+           renews_at = (
+             end_date + case
+               when pause_from is null then 0
+               else greatest(
+                 0,
+                 least(current_date, pause_to) - greatest(pause_from, start_date) + 1
+               )
+             end
+           )::timestamptz,
+           status = 'active', pause_from = null, pause_to = null
+       where user_id = $1 and status in ('active', 'paused')
+         and (status = 'paused' or pause_from is not null)
+       returning id`,
       [context.userId],
     );
+    if (!rows[0]) throw new Error("There is no paused or scheduled subscription to resume");
     return { ok: true };
   });
 

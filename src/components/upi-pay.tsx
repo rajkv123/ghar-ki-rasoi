@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { QrCode, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatInr, orderCode } from "@/lib/kitchen/format";
-import { UPI_APPS, genericUpiUri, upiUri } from "@/lib/kitchen/upi";
+import { UPI_APPS, upiUri } from "@/lib/kitchen/upi";
 import { submitUpiRef } from "@/lib/kitchen/server";
 import type { KitchenPublic, Order } from "@/lib/kitchen/types";
 import { cn } from "@/lib/utils";
@@ -20,46 +21,20 @@ export function UpiPay({
 }) {
   const [appId, setAppId] = useState("gpay");
   const [ref, setRef] = useState("");
-  const [svg, setSvg] = useState("");
-  const [qrError, setQrError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const pay = useMemo(
     () => ({
-      vpa: kitchen.subscription_upi_vpa,
-      name: kitchen.subscription_upi_name,
+      vpa: kitchen.upi_vpa,
+      name: kitchen.upi_name,
       paise: order.total_paise,
       note: `Gharaunda Rasoi ${orderCode(order.id)}`,
       tr: orderCode(order.id),
     }),
     [kitchen, order],
   );
-  const generic = genericUpiUri(pay);
   const app = UPI_APPS.find((a) => a.id === appId) ?? UPI_APPS[0];
-
-  useEffect(() => {
-    let cancelled = false;
-    setQrError(null);
-    void import("qrcode")
-      .then(async (QR) => {
-        const next = await QR.toString(generic, {
-          type: "svg",
-          margin: 2,
-          width: 280,
-          color: { dark: "#1c1410", light: "#ffffff" },
-        });
-        if (!cancelled) setSvg(next);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setQrError(err instanceof Error ? err.message : "Could not generate the payment QR");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [generic]);
 
   return (
     <Card className="p-5 sm:p-6">
@@ -73,24 +48,25 @@ export function UpiPay({
       ) : (
         <>
           <div className="mt-5 grid gap-6 md:grid-cols-[288px_1fr]">
-            {qrError ? (
-              <p className="text-sm text-primary" role="alert">
-                Could not generate the payment QR: {qrError}
-              </p>
-            ) : (
-              <div
-                className="mx-auto size-72 rounded-lg bg-white p-2 [&_svg]:size-full"
-                role="img"
-                aria-label={`UPI QR code for ${formatInr(order.total_paise)}`}
-                dangerouslySetInnerHTML={{ __html: svg }}
-              />
-            )}
+            <img
+              src="/upi.png"
+              alt={`UPI payment QR code for ${formatInr(order.total_paise)}`}
+              className="mx-auto size-72 rounded-lg bg-white object-contain p-2"
+            />
             <div>
-              <p className="text-sm text-muted">
-                Scan the QR from any UPI app, or open the one you use. After the payment succeeds,
-                paste the UTR / UPI reference. Your order will remain awaiting payment verification
-                until the kitchen confirms it.
-              </p>
+              <div className="space-y-3">
+                <p className="flex items-start gap-2 text-sm text-muted">
+                  <QrCode className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+                  <span>
+                    Scan this QR to pay {formatInr(order.total_paise)}. If your app doesn’t fill in
+                    the amount, enter it before paying.
+                  </span>
+                </p>
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  <Smartphone className="size-5 text-primary" aria-hidden="true" />
+                  Open your UPI app below
+                </p>
+              </div>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {UPI_APPS.map((a) => (
                   <button
@@ -101,14 +77,28 @@ export function UpiPay({
                       window.location.href = upiUri(a, pay);
                     }}
                     className={cn(
-                      "min-h-11 rounded-md px-2 text-sm font-medium",
+                      "flex min-h-12 items-center justify-center gap-2 rounded-md px-2 text-sm font-medium",
                       app.id === a.id ? "bg-primary text-primary-fg" : "bg-fg/6 hover:bg-fg/10",
                     )}
                   >
-                    {a.label}
+                    <img
+                      src={a.icon}
+                      alt=""
+                      aria-hidden="true"
+                      className="size-6 shrink-0 object-contain"
+                    />
+                    <span>{a.label}</span>
                   </button>
                 ))}
               </div>
+              <p className="mt-2 text-xs text-subtle">
+                BHIM and CRED app icon artwork by Arcticons Team, licensed under CC BY-SA 4.0
+                (github.com/Arcticons-Team/Arcticons).
+              </p>
+              <p className="mt-3 text-sm text-muted">
+                After the payment succeeds, paste the UTR / UPI reference below. Your order remains
+                awaiting verification until the kitchen confirms the payment.
+              </p>
             </div>
           </div>
 

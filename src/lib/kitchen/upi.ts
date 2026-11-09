@@ -2,17 +2,58 @@ export type UpiApp = {
   id: string;
   label: string;
   scheme: string;
+  icon: string;
 };
 
 export const UPI_APPS: UpiApp[] = [
-  { id: "gpay", label: "Google Pay", scheme: "gpay://upi/pay" },
-  { id: "phonepe", label: "PhonePe", scheme: "phonepe://pay" },
-  { id: "paytm", label: "Paytm", scheme: "paytmmp://pay" },
-  { id: "bhim", label: "BHIM", scheme: "bhim://pay" },
-  { id: "amazonpay", label: "Amazon Pay", scheme: "amazonpay://upi/pay" },
-  { id: "cred", label: "CRED", scheme: "credpay://upi/pay" },
-  { id: "whatsapp", label: "WhatsApp Pay", scheme: "whatsapp://pay" },
-  { id: "generic", label: "Any UPI app", scheme: "upi://pay" },
+  {
+    id: "gpay",
+    label: "Google Pay",
+    scheme: "gpay://upi/pay",
+    icon: "/payment-logos/googlepay.svg",
+  },
+  {
+    id: "phonepe",
+    label: "PhonePe",
+    scheme: "phonepe://pay",
+    icon: "/payment-logos/phonepe.svg",
+  },
+  {
+    id: "paytm",
+    label: "Paytm",
+    scheme: "paytmmp://pay",
+    icon: "/payment-logos/paytm.svg",
+  },
+  {
+    id: "bhim",
+    label: "BHIM",
+    scheme: "bhim://pay",
+    icon: "/payment-logos/bhim.svg",
+  },
+  {
+    id: "amazonpay",
+    label: "Amazon Pay",
+    scheme: "amazonpay://upi/pay",
+    icon: "/payment-logos/amazonpay.svg",
+  },
+  {
+    id: "cred",
+    label: "CRED",
+    scheme: "credpay://upi/pay",
+    icon: "/payment-logos/cred.svg",
+  },
+  {
+    id: "whatsapp",
+    label: "WhatsApp Pay",
+    scheme: "whatsapp://pay",
+    icon: "/payment-logos/whatsapp.svg",
+  },
+  {
+    id: "generic",
+    label: "Any UPI app",
+    scheme: "upi://pay",
+    icon: "/payment-logos/upi.svg",
+  },
 ];
 
 export function upiQuery(opts: {

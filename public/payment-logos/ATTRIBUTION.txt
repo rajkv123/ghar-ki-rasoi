@@ -1,0 +1,13 @@
+Payment app marks in this directory:
+
+- Google Pay, PhonePe, Paytm, and WhatsApp: Simple Icons (CC0 1.0),
+  https://simpleicons.org/
+- Amazon Pay: CoreUI Icons (CC0 1.0),
+  https://github.com/coreui/coreui-icons
+- BHIM and CRED app icons: Arcticons (CC BY-SA 4.0),
+  https://github.com/Arcticons-Team/Arcticons
+- UPI: Boxicons (MIT),
+  https://github.com/box-icons/boxicons-core
+
+The logos are trademarks of their respective owners. Their inclusion does not
+imply endorsement.

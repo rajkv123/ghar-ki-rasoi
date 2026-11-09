@@ -1,6 +1,5 @@
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,7 +38,7 @@ function KitchenLayout() {
       </div>
     );
   }
-  if (!user) return <RedirectToSignIn />;
+  if (!user) return <Navigate to="/login" search={{ redirectTo: "/kitchen" }} />;
 
   const role = roleQ.data;
   if (roleQ.isLoading) {
@@ -56,8 +55,8 @@ function KitchenLayout() {
         <Card className="space-y-4 p-6">
           <h1 className="font-display text-3xl">Claim this kitchen</h1>
           <p className="text-sm text-muted">
-            The first signed-in cook becomes the Gharaunda Rasoi owner — daily menus,
-            licence, UPI and orders live here.
+            The first signed-in cook becomes the Gharaunda Rasoi owner — daily menus, licence, UPI
+            and orders live here.
           </p>
           <Button onClick={() => claim.mutate()} disabled={claim.isPending}>
             {claim.isPending ? "Claiming…" : "I cook here"}

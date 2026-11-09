@@ -1,10 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { ShoppingBag } from "lucide-react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { cartCount, useCart } from "@/lib/cart";
 import { SITE_LOCATION, SITE_NAME } from "@/lib/kitchen/format";
+import { getKitchenRole } from "@/lib/kitchen/server";
 import { cn } from "@/lib/utils";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -22,20 +24,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => setMounted(true), []);
   const count = mounted ? cartCount(lines) : 0;
   const { user, isPending } = useCurrentUserState();
+  const kitchenRoleQ = useQuery({
+    queryKey: ["kitchen-role"],
+    queryFn: () => getKitchenRole(),
+    enabled: !!user,
+  });
+  const hasKitchenAccess = Boolean(kitchenRoleQ.data?.role);
 
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-30 border-b border-border bg-bg/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2.5 text-fg">
-            <img
-              src="/favicon.svg"
-              alt=""
-              className="size-10 rounded-xl shadow-sm"
-            />
-            <span className="font-display text-lg leading-none tracking-tight">
-              {SITE_NAME}
-            </span>
+            <img src="/favicon.svg" alt="" className="size-10 rounded-xl shadow-sm" />
+            <span className="font-display text-lg leading-none tracking-tight">{SITE_NAME}</span>
           </Link>
           <nav className="ml-4 hidden items-center gap-1 md:flex">
             {NAV.map((item) => (
@@ -52,6 +54,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {item.label}
               </Link>
             ))}
+            {hasKitchenAccess && (
+              <Link
+                to="/kitchen"
+                className={cn(
+                  "rounded-md px-3 py-2 text-sm transition-colors duration-150",
+                  pathname.startsWith("/kitchen")
+                    ? "bg-fg/8 font-medium"
+                    : "text-muted hover:bg-fg/5 hover:text-fg",
+                )}
+              >
+                Kitchen
+              </Link>
+            )}
           </nav>
           <div className="ml-auto flex items-center gap-1">
             <ThemeSwitcher />
@@ -77,6 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <SignedOut>
                 <Link
                   to="/login"
+                  search={{ redirectTo: "/" }}
                   className="rounded-md px-3 py-2 text-sm font-medium hover:bg-fg/5"
                 >
                   Sign in
@@ -89,12 +105,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                 className="hidden rounded-md px-3 py-2 text-sm text-muted hover:text-fg lg:inline"
               >
                 Account
-              </Link>
-              <Link
-                to="/kitchen"
-                className="hidden rounded-md px-3 py-2 text-sm text-muted hover:text-fg lg:inline"
-              >
-                Kitchen
               </Link>
             </SignedIn>
           </div>
@@ -112,6 +122,17 @@ export function AppShell({ children }: { children: ReactNode }) {
               {item.label}
             </Link>
           ))}
+          {hasKitchenAccess && (
+            <Link
+              to="/kitchen"
+              className={cn(
+                "shrink-0 rounded-full px-3 py-2 text-sm",
+                pathname.startsWith("/kitchen") ? "bg-fg/8 font-medium" : "text-muted",
+              )}
+            >
+              Kitchen
+            </Link>
+          )}
         </nav>
       </header>
       <main className="flex-1">{children}</main>
@@ -122,9 +143,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="mt-1 text-sm text-muted">Home kitchen · {SITE_LOCATION}</p>
           </div>
           <p className="max-w-sm text-sm text-muted">
-            Food licence on display. Calories counted per plate. UPI on every
-            order. Built to feed a thousand tables from one hearth.
+            Food licence on display. Calories counted per plate. UPI on every order. Built to feed a
+            thousand tables from one hearth.
           </p>
+          <Link
+            to="/admin/login"
+            search={{ role: "owner" }}
+            className="text-sm text-muted underline-offset-4 hover:text-fg hover:underline"
+          >
+            Kitchen staff sign in
+          </Link>
         </div>
       </footer>
     </div>

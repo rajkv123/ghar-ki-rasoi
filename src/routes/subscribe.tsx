@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,11 +10,9 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { formatInr } from "@/lib/kitchen/format";
 import {
   createPendingSubscription,
-  getKitchen,
   getPlans,
   submitSubscriptionPayment,
 } from "@/lib/kitchen/server";
-import { genericUpiUri } from "@/lib/kitchen/upi";
 import type { Plan } from "@/lib/kitchen/types";
 
 const MEAL_OPTIONS = [
@@ -26,13 +24,12 @@ const MEAL_OPTIONS = [
 export const Route = createFileRoute("/subscribe")({
   loader: async () => ({
     plans: await getPlans(),
-    kitchen: await getKitchen(),
   }),
   component: SubscribePage,
 });
 
 function SubscribePage() {
-  const { plans, kitchen } = Route.useLoaderData();
+  const { plans } = Route.useLoaderData();
   const { user } = useCurrentUserState();
   const [busy, setBusy] = useState<number | null>(null);
   const [needAuth, setNeedAuth] = useState(false);
@@ -44,47 +41,6 @@ function SubscribePage() {
   const [paymentRef, setPaymentRef] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submittingRef, setSubmittingRef] = useState(false);
-  const [qrSvg, setQrSvg] = useState("");
-  const [qrError, setQrError] = useState<string | null>(null);
-
-  const paymentUri = useMemo(() => {
-    if (!payment) return "";
-    return genericUpiUri({
-      vpa: kitchen.subscription_upi_vpa,
-      name: kitchen.subscription_upi_name,
-      paise: payment.plan.price_paise,
-      note: `Gharaunda Rasoi ${payment.plan.name}`,
-      tr: `GR-SUB-${payment.subscriptionId}`,
-    });
-  }, [kitchen.subscription_upi_name, kitchen.subscription_upi_vpa, payment]);
-
-  useEffect(() => {
-    if (!paymentUri) {
-      setQrSvg("");
-      setQrError(null);
-      return;
-    }
-    let cancelled = false;
-    setQrError(null);
-    void import("qrcode")
-      .then(async (QR) => {
-        const svg = await QR.toString(paymentUri, {
-          type: "svg",
-          margin: 2,
-          width: 280,
-          color: { dark: "#1c1410", light: "#ffffff" },
-        });
-        if (!cancelled) setQrSvg(svg);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setQrError(err instanceof Error ? err.message : "Could not generate the payment QR");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [paymentUri]);
 
   if (needAuth) return <RedirectToSignIn />;
 
@@ -101,8 +57,6 @@ function SubscribePage() {
       setPayment({ plan, subscriptionId: result.id });
       setPaymentRef("");
       setSubmitted(false);
-      setQrSvg("");
-      setQrError(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not start subscription");
     } finally {
@@ -223,20 +177,14 @@ function SubscribePage() {
           ) : (
             <>
               <p className="text-sm text-muted">
-                Scan this QR in your UPI app. The selected subscription amount is included.
+                Scan this UPI QR and pay {formatInr(payment.plan.price_paise)}. If your UPI app
+                doesn’t fill in the amount, enter it before paying.
               </p>
-              {qrError ? (
-                <p className="text-sm text-primary" role="alert">
-                  Could not generate the payment QR: {qrError}
-                </p>
-              ) : (
-                <div
-                  className="mx-auto size-64 rounded-lg bg-white p-2 [&_svg]:size-full"
-                  role="img"
-                  aria-label={`UPI QR code for ${formatInr(payment.plan.price_paise)}`}
-                  dangerouslySetInnerHTML={{ __html: qrSvg }}
-                />
-              )}
+              <img
+                src="/upi.png"
+                alt={`UPI payment QR code for ${formatInr(payment.plan.price_paise)}`}
+                className="mx-auto size-64 rounded-lg bg-white object-contain p-2"
+              />
               <form
                 className="space-y-3"
                 onSubmit={async (event) => {

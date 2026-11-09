@@ -11,19 +11,17 @@ Full guides + snippets: the **`neon` skill** (database) and the **`auth` skill**
 
 - `const sql = await getSql()` from `@/lib/db`. Use it **only** inside
   `createServerFn` handlers / server loaders.
-- Dual-mode: a regular Postgres driver (node-postgres, `pg`) when `DATABASE_URL`
-  is set, else a local **PGLite** fallback — so the preview always renders.
-- In preview, PGLite **bootstraps at server start** (`ensureDbReady`) once the
-  app has migrations. Do not remove that.
+- PostgreSQL only: the regular node-postgres (`pg`) driver requires
+  `DATABASE_URL`, configured as a server-side secret.
 - A deployed app is provisioned a real database when it ships `migrations/*.sql`
   or sign-in. An app that needs one without either says so with
   `"deploy": {"database": true}` in `.grok/app-env.json` — see the `neon` skill.
 
 ## Migrations
 
-- `migrations/*.sql` is the single schema source: applied to **Neon on deploy**
-  (`npm run build` runs `npm run db:migrate`, so Vercel ships with the schema
-  ready) and to the **PGLite** preview automatically on startup.
+- `migrations/*.sql` is the single schema source: applied to PostgreSQL on deploy
+  (`npm run build` runs `npm run db:migrate`). Local development uses the same
+  configured PostgreSQL database; run `npm run db:migrate` to apply migrations.
 - Add the app's tables as ordered files (`migrations/0002_*.sql`), not inline.
 - An app that needs no database adds no `.sql` file, and then no migration runs
   anywhere.
@@ -75,8 +73,8 @@ flag (exit 0 agree, 1 diverged, 2 could not observe).
 
 ## Env
 
-On deploy the platform injects `DATABASE_URL` + per-app auth creds; live preview
-needs neither (baked preview client, PGLite fallback). Deployed behind the gate,
+On deploy the platform injects `DATABASE_URL` + per-app auth creds. Local
+development requires a server-side `DATABASE_URL`. Deployed behind the gate,
 signed-in Grok viewers get the app session automatically from `x-grok-identity`
 (see the `auth` skill — `references/grok-identity.md`); the broker federation
 covers anonymous viewers and no-gate contexts.

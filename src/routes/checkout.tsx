@@ -2,7 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CalorieMeter } from "@/components/calorie-meter";
-import { Button } from "@/components/ui/button";
+import { UpiPay } from "@/components/upi-pay";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,8 +17,9 @@ import {
   haversineKm,
   rideMinutes,
 } from "@/lib/kitchen/geo";
-import { formatInr, formatKm } from "@/lib/kitchen/format";
+import { formatInr, formatKm, orderCode } from "@/lib/kitchen/format";
 import { getKitchen, getMyProfile, placeOrder } from "@/lib/kitchen/server";
+import type { Order } from "@/lib/kitchen/types";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/checkout")({
@@ -36,6 +38,7 @@ function CheckoutPage() {
   const [address, setAddress] = useState("");
   const [areaId, setAreaId] = useState(DELIVERY_AREAS[0].id);
   const [busy, setBusy] = useState(false);
+  const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
   const area = findArea(areaId) ?? DELIVERY_AREAS[0];
 
   useEffect(() => {
@@ -80,6 +83,40 @@ function CheckoutPage() {
   }
   if (!user) return <RedirectToSignIn />;
 
+  if (placedOrder) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6 px-4 py-10 sm:px-6">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">
+            {orderCode(placedOrder.id)}
+          </p>
+          <h1 className="mt-1 font-display text-4xl">Order placed — pay now</h1>
+          <p className="mt-2 text-sm text-muted">
+            Your order is awaiting UPI payment. Scan the QR below and submit the payment reference.
+            The kitchen will start preparing it after verifying the payment.
+          </p>
+        </div>
+        <UpiPay
+          order={placedOrder}
+          kitchen={kitchen}
+          onPaid={() => {
+            void navigate({
+              to: "/orders/$id",
+              params: { id: String(placedOrder.id) },
+            });
+          }}
+        />
+        <Link
+          to="/orders/$id"
+          params={{ id: String(placedOrder.id) }}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          View order details
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_340px]">
       <div>
@@ -119,8 +156,8 @@ function CheckoutPage() {
                   },
                 });
                 clear();
-                toast("Order placed — pay with UPI");
-                void navigate({ to: "/orders/$id", params: { id: String(order.id) } });
+                setPlacedOrder(order);
+                toast("Order placed. Scan the QR below to pay.");
               } catch (err) {
                 toast.error(err instanceof Error ? err.message : "Could not place order");
               } finally {
@@ -171,7 +208,7 @@ function CheckoutPage() {
               <iframe title="Delivery pin" src={osm} className="h-56 w-full border-0" />
             </Card>
             <Button type="submit" disabled={busy || !inRange} className="w-full sm:w-auto">
-              {busy ? "Placing…" : "Place order"}
+              {busy ? "Placing…" : "Place order & pay now"}
             </Button>
           </form>
         )}

@@ -46,8 +46,8 @@ UI rather than hanging.
 
 Create the two server files — nothing works without them:
 
-1. `src/lib/multiplayer/signaling.server.ts` — the DB-backed signaling relay
-   (Neon deployed, PGLite in preview).
+1. `src/lib/multiplayer/signaling.server.ts` — the PostgreSQL-backed signaling
+   relay.
 2. `src/routes/api/rtc.ts` — mounts it at `/api/rtc` (GET poll, POST
    signal/leave).
 

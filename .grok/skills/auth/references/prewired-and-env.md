@@ -21,22 +21,21 @@
   the iframe) and federates via a baked shared **preview client**
   (`src/lib/auth/preview.ts`). The handler 302s straight to the broker/upstream
   login; on return the popup posts the session bearer back in a tiny HTML page.
-  Sessions (and email/password users) persist in the app's embedded PGLite DB —
-  the SAME DB as app data — and, since the iframe's cookies are partitioned,
-  ride that bearer token; all of it lives in `src/lib/auth`.
-  Restarting the preview resets the DB.
+  Sessions (and email/password users) persist in the configured PostgreSQL
+  database — the SAME DB as app data — and, since the iframe's cookies are
+  partitioned, ride that bearer token; all of it lives in `src/lib/auth`.
 - **Deployed**: the deployer injects a per-app client + `DATABASE_URL`, so
   sign-in persists identities in Postgres.
 
 ## Env vars — do **not** create a `.env` file
 
 **Never write a `.env` / `.env.local` / `.env.example` for auth (or anything
-else) in this sandbox.** Live preview sign-in works out of the box with **zero**
-env configuration: the server falls back to the baked preview client in
+else) in this sandbox.** Live preview uses the baked preview client in
 `src/lib/auth/preview.ts`, derives the `*.grok-sandbox.com` origin per-request,
-mints a process-stable session secret, and persists sessions in embedded
-PGLite. Deployed apps get `GROK_AUTH_*` / `BETTER_AUTH_*` / `DATABASE_URL`
-injected by the platform — still not something you write into a file.
+and mints a process-stable session secret. Sign-in requires a configured
+PostgreSQL `DATABASE_URL`. Deployed apps get `GROK_AUTH_*` / `BETTER_AUTH_*` /
+`DATABASE_URL` injected by the platform — still not something you write into a
+file.
 
 Optional process-env knobs (platform / rare overrides only — **do not** put
 these in a file you create):
@@ -48,7 +47,7 @@ these in a file you create):
 | `BETTER_AUTH_SECRET` | server | signs this app's own sessions (process-stable fallback in preview; survives HMR) |
 | `GROK_AUTH_ISSUER` | server | the shared broker (defaults to `https://auth.grok.me`) |
 | `GROK_AUTH_CLIENT_ID` / `GROK_AUTH_CLIENT_SECRET` | server | per-app client (falls back to the preview client) |
-| `DATABASE_URL` | server | when deployed, Better Auth persists here (preview persists to the embedded PGLite — same DB as app data) |
+| `DATABASE_URL` | server | required PostgreSQL connection string for Better Auth and app data |
 
 Never expose a non-`VITE_` var to the client. The preview client id/secret live
 server-only in `src/lib/auth/preview.ts`.

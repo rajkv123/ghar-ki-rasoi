@@ -73,13 +73,19 @@ export type Profile = {
   theme: string | null;
 };
 
+export type SubscriptionStatus = "pending_payment" | "active" | "paused" | "expired" | "cancelled";
+
 export type Subscription = {
   id: number;
   user_id: string;
   plan_id: number;
-  status: string;
+  status: SubscriptionStatus;
   started_at: string;
   renews_at: string;
+  start_date: string;
+  end_date: string;
+  pause_from: string | null;
+  pause_to: string | null;
   last_paid_at: string | null;
   payment_ref: string | null;
   plan: Plan | null;

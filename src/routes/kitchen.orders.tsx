@@ -4,15 +4,20 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { formatInr, orderCode } from "@/lib/kitchen/format";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { formatInr, orderCode, SITE_NAME } from "@/lib/kitchen/format";
 import {
   confirmOrderPayment,
   confirmSubscriptionPayment,
+  getKitchen,
+  getKitchenRole,
   listKitchenOrders,
   listPendingSubscriptionPayments,
   updateOrderStatus,
 } from "@/lib/kitchen/server";
 import { KITCHEN_NEXT, KITCHEN_NEXT_LABEL, ORDER_STATUS_LABEL } from "@/lib/kitchen/status";
+import { upiUri, UPI_APPS } from "@/lib/kitchen/upi";
 
 export const Route = createFileRoute("/kitchen/orders")({
   component: KitchenOrdersPage,
@@ -21,6 +26,9 @@ export const Route = createFileRoute("/kitchen/orders")({
 function KitchenOrdersPage() {
   const [confirmingSubscription, setConfirmingSubscription] = useState<number | null>(null);
   const [confirmingOrder, setConfirmingOrder] = useState<number | null>(null);
+  const [deliveryDetails, setDeliveryDetails] = useState<
+    Record<number, { name: string; phone: string; arrival: string }>
+  >({});
   const [whatsappNotice, setWhatsappNotice] = useState<{
     url: string | null;
     customer: string;
@@ -36,10 +44,19 @@ function KitchenOrdersPage() {
     queryFn: () => listPendingSubscriptionPayments(),
     refetchInterval: 12_000,
   });
+  const kitchen = useQuery({ queryKey: ["kitchen"], queryFn: () => getKitchen() });
+  const kitchenRole = useQuery({ queryKey: ["kitchen-role"], queryFn: () => getKitchenRole() });
+  const isKitchenOwner = kitchenRole.data?.role === "owner";
 
   return (
     <div>
-      {whatsappNotice && (
+      {kitchenRole.isError && (
+        <p className="mb-4 text-sm text-primary" role="alert">
+          Could not verify kitchen role. WhatsApp messaging remains unavailable until your role is
+          confirmed.
+        </p>
+      )}
+      {isKitchenOwner && whatsappNotice && (
         <Card className="mb-5 space-y-3 p-4" role="status">
           <p className="text-sm">
             Payment verified for {whatsappNotice.customer}. Send the confirmation from your WhatsApp
@@ -96,13 +113,15 @@ function KitchenOrdersPage() {
                         `Thanks for subscribing to Gharaunda Rasoi's ${payment.plan_name}! ` +
                         `We have received and verified your payment of ${formatInr(payment.price_paise)}. ` +
                         "Your subscription is active. We look forward to serving you!";
-                      setWhatsappNotice({
-                        customer,
-                        url: phone
-                          ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
-                          : null,
-                        action: "Send “Thanks for subscribing” on WhatsApp",
-                      });
+                      if (isKitchenOwner) {
+                        setWhatsappNotice({
+                          customer,
+                          url: phone
+                            ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+                            : null,
+                          action: "Send “Thanks for subscribing” on WhatsApp",
+                        });
+                      }
                       toast("Subscription payment verified");
                       void subscriptionPayments.refetch();
                     } catch (err) {
@@ -129,9 +148,57 @@ function KitchenOrdersPage() {
         </ul>
       </section>
       <h2 className="font-display text-2xl">Orders</h2>
+      {kitchenRole.data?.role === "staff" && (
+        <p className="mt-1 text-sm text-muted">
+          WhatsApp Business messaging is available to the kitchen owner only.
+        </p>
+      )}
       <ul className="mt-4 space-y-3">
         {(q.data ?? []).map((order) => {
           const next = KITCHEN_NEXT[order.status];
+          const delivery = deliveryDetails[order.id] ?? { name: "", phone: "", arrival: "" };
+          const orderConfirmationUrl = whatsappUrl(
+            order.delivery_phone,
+            `Hi ${order.delivery_name},\n\nYour order #${orderCode(order.id)} has been received.\n\n` +
+              `Amount: ${formatInr(order.total_paise)}\n\nThank you for ordering from ${SITE_NAME}.`,
+          );
+          const paymentLink = kitchen.data
+            ? upiUri(UPI_APPS.find((app) => app.id === "generic") ?? UPI_APPS[0], {
+                vpa: kitchen.data.upi_vpa,
+                name: kitchen.data.upi_name,
+                paise: order.total_paise,
+                note: `${SITE_NAME} ${orderCode(order.id)}`,
+                tr: orderCode(order.id),
+              })
+            : null;
+          const paymentUrl = paymentLink
+            ? whatsappUrl(
+                order.delivery_phone,
+                `Hi ${order.delivery_name},\n\nPlease complete payment for Order #${orderCode(order.id)}.\n\n` +
+                  `Pay Here:\n${paymentLink}`,
+              )
+            : null;
+          const arrivalDate = delivery.arrival ? new Date(delivery.arrival) : null;
+          const arrivalLabel =
+            arrivalDate && !Number.isNaN(arrivalDate.getTime())
+              ? new Intl.DateTimeFormat("en-IN", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(arrivalDate)
+              : "";
+          const outForDeliveryUrl =
+            delivery.name.trim() && normalizeWhatsappPhone(delivery.phone) && arrivalLabel
+              ? whatsappUrl(
+                  order.delivery_phone,
+                  `Hi ${order.delivery_name},\n\nYour order #${orderCode(order.id)} is out for delivery.\n\n` +
+                    `Delivery Executive: ${delivery.name.trim()}\nPhone: ${delivery.phone.trim()}\n\n` +
+                    `Expected Arrival: ${arrivalLabel}`,
+                )
+              : null;
+          const deliveredUrl = whatsappUrl(
+            order.delivery_phone,
+            `Your order #${orderCode(order.id)} has been delivered.\n\nEnjoy your meal!`,
+          );
           return (
             <li key={order.id}>
               <Card className="space-y-3 p-4">
@@ -159,6 +226,106 @@ function KitchenOrdersPage() {
                 {order.payment_ref && (
                   <p className="text-xs tabular-nums text-subtle">UPI ref {order.payment_ref}</p>
                 )}
+                {isKitchenOwner && (
+                  <div className="space-y-3 border-t border-border pt-3">
+                    <p className="text-sm font-medium">WhatsApp Business messages</p>
+                    <div className="flex flex-wrap gap-2">
+                      {orderConfirmationUrl && order.status !== "cancelled" && (
+                        <Button asChild size="sm" variant="outline">
+                          <a href={orderConfirmationUrl} target="_blank" rel="noreferrer">
+                            Send order confirmation
+                          </a>
+                        </Button>
+                      )}
+                      {order.status === "pending_payment" &&
+                        (paymentUrl ? (
+                          <Button asChild size="sm" variant="outline">
+                            <a href={paymentUrl} target="_blank" rel="noreferrer">
+                              Send payment link
+                            </a>
+                          </Button>
+                        ) : (
+                          <p className="self-center text-xs text-muted">
+                            {kitchen.isLoading
+                              ? "Loading payment details…"
+                              : "Add a valid customer phone number to send the payment link."}
+                          </p>
+                        ))}
+                    </div>
+                    {order.status === "out_for_delivery" && (
+                      <div className="space-y-3 rounded-md bg-fg/4 p-3">
+                        <p className="text-sm text-muted">
+                          Add the delivery executive and arrival details for the customer message.
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="space-y-1">
+                            <Label htmlFor={`driver-name-${order.id}`}>Delivery executive</Label>
+                            <Input
+                              id={`driver-name-${order.id}`}
+                              value={delivery.name}
+                              onChange={(event) =>
+                                setDeliveryDetails((current) => ({
+                                  ...current,
+                                  [order.id]: { ...delivery, name: event.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`driver-phone-${order.id}`}>Executive phone</Label>
+                            <Input
+                              id={`driver-phone-${order.id}`}
+                              type="tel"
+                              value={delivery.phone}
+                              onChange={(event) =>
+                                setDeliveryDetails((current) => ({
+                                  ...current,
+                                  [order.id]: { ...delivery, phone: event.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`arrival-${order.id}`}>Expected arrival</Label>
+                            <Input
+                              id={`arrival-${order.id}`}
+                              type="datetime-local"
+                              value={delivery.arrival}
+                              onChange={(event) =>
+                                setDeliveryDetails((current) => ({
+                                  ...current,
+                                  [order.id]: { ...delivery, arrival: event.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {outForDeliveryUrl ? (
+                          <Button asChild size="sm">
+                            <a href={outForDeliveryUrl} target="_blank" rel="noreferrer">
+                              Send out-for-delivery update
+                            </a>
+                          </Button>
+                        ) : (
+                          <p className="text-xs text-muted">
+                            Enter a valid executive name, phone, and arrival time to prepare the
+                            message.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {order.status === "delivered" && deliveredUrl && (
+                      <Button asChild size="sm" variant="outline">
+                        <a href={deliveredUrl} target="_blank" rel="noreferrer">
+                          Send delivered message
+                        </a>
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted">
+                      WhatsApp opens a prefilled message; review and tap Send in the Business app.
+                    </p>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {order.status === "pending_payment" && order.payment_ref && (
                     <Button
@@ -179,13 +346,15 @@ function KitchenOrdersPage() {
                             `Thanks for your order with Gharaunda Rasoi! We have received and verified ` +
                             `your payment of ${formatInr(order.total_paise)} for ${orderCode(order.id)}. ` +
                             "We are preparing your meal.";
-                          setWhatsappNotice({
-                            customer: order.delivery_name,
-                            url: phone
-                              ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
-                              : null,
-                            action: "Send order confirmation on WhatsApp",
-                          });
+                          if (isKitchenOwner) {
+                            setWhatsappNotice({
+                              customer: order.delivery_name,
+                              url: phone
+                                ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+                                : null,
+                              action: "Send order confirmation on WhatsApp",
+                            });
+                          }
                           toast("Order payment verified");
                           void q.refetch();
                         } catch (err) {
@@ -234,4 +403,18 @@ function KitchenOrdersPage() {
       </ul>
     </div>
   );
+}
+
+function normalizeWhatsappPhone(phone: string): string | null {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length >= 11 && digits.length <= 15) return digits;
+  return null;
+}
+
+function whatsappUrl(phone: string, message: string): string | null {
+  const normalizedPhone = normalizeWhatsappPhone(phone);
+  return normalizedPhone
+    ? `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`
+    : null;
 }

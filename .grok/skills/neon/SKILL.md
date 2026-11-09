@@ -6,7 +6,7 @@ description: >
   "database", "Postgres", "Neon", "save data", "store data", "persist", "tables",
   "SQL", "query", "migrations".
 metadata:
-  short-description: "Neon Postgres (with a local PGLite fallback) for this template"
+  short-description: "Neon Postgres for this template"
 user-invocable: false
 ---
 
@@ -16,15 +16,10 @@ user-invocable: false
 that outlives a browser session or is shared across devices. Otherwise ship no
 migrations, don't import `@/lib/db`, and keep state in `localStorage` / zustand.
 
-This template ships a ready-made, **dual-mode** database integration:
+This template ships a PostgreSQL integration using Neon and the `pg`
+node-postgres driver. A valid `DATABASE_URL` is required for database access.
 
-- **Configured** (env var set, e.g. deployed): real **Neon Postgres**.
-- **Not configured** (sandbox live preview): the DB falls back to a local
-  **PGLite** (embedded WASM Postgres), so the preview always renders. Build
-  against the `@/lib/db` helper; both modes work with the same API.
-
-Packages are **preinstalled** — do not `npm install` them: `pg` (node-postgres,
-the regular Postgres driver) and `@electric-sql/pglite` (local DB fallback).
+The `pg` package is preinstalled — do not install another PostgreSQL driver.
 
 For **user accounts, sign-in, and reading the current user**, see the separate
 **`auth` skill** — this skill is just the database.
@@ -37,32 +32,30 @@ Set `deploy.database` to `true` in `.grok/app-env.json`:
 { "VITE_AUTH_ENABLED": "false", "deploy": { "database": true } }
 ```
 
-That is what tells the platform to provision Neon for the deployed app; leave it
-`false` and the deploy gets no `DATABASE_URL`, so the app silently runs on a
-throwaway PGLite that loses its rows. Shipping `migrations/*.sql`, or sign-in,
-provisions one regardless — this flag is for an app that queries `@/lib/db`
-without either. It is not a `VITE_` key and never reaches the browser.
+That is what tells the platform to provision Neon for the deployed app. Shipping
+`migrations/*.sql`, or sign-in, provisions one regardless — this flag is for an
+app that queries `@/lib/db` without either. It is not a `VITE_` key and never
+reaches the browser.
 
 ## Env vars — do **not** create a `.env` file
 
-**Never write a `.env` / `.env.local` / `.env.example` for the database.** In
-the sandbox live preview, leave `DATABASE_URL` unset — `@/lib/db` automatically
-uses embedded PGLite. When the app is deployed, the platform injects
-`DATABASE_URL` (Neon); you do not provision or write it yourself.
+**Never write a `.env` / `.env.local` / `.env.example` for the database.**
+Configure `DATABASE_URL` as a server-side secret in the hosting environment.
+The deployment platform injects the Neon connection string for provisioned
+databases.
 
 | Var | Where | Purpose |
 |---|---|---|
-| `DATABASE_URL` | server | Neon connection string when deployed (optional — PGLite fallback if unset) |
+| `DATABASE_URL` | server | Required PostgreSQL connection string |
 
 Never hardcode it; never expose non-`VITE_` vars to the client.
 
 ## Database (server-only)
 
-`@/lib/db` exports `getSql()` and `dbSource`: a **regular Postgres driver**
-(node-postgres, `pg`) against `DATABASE_URL`, or a local **PGLite** fallback when
-unset. Same API either way — a tagged template (and `.query()`) resolving to
-`rows[]`. Call ONLY from a `createServerFn` handler / server loader, never a
-client component. Define schema in `migrations/`, not inline.
+`@/lib/db` exports `getSql()` and `dbSource`, backed by PostgreSQL through
+node-postgres (`pg`) and `DATABASE_URL`. The tagged template and `.query()`
+forms resolve to `rows[]`. Call ONLY from a `createServerFn` handler / server
+loader, never a client component. Define schema in `migrations/`, not inline.
 
 ```ts
 import { createServerFn } from "@tanstack/react-start";
@@ -110,10 +103,10 @@ about a person) in this mode, and leave out destructive bulk mutations
 
 ## Migrations
 
-`migrations/*.sql` are the single schema source. They apply to **Neon on deploy**
-(`npm run build` runs `db:migrate` against `DATABASE_URL`, so Vercel ships with
-the schema ready) and to the **PGLite** preview **automatically on startup**, so
-dev matches prod.
+`migrations/*.sql` are the single schema source. They apply to Neon during
+deployment (`npm run build` runs `db:migrate` against `DATABASE_URL`). Local
+development requires the same server-side `DATABASE_URL`; run
+`npm run db:migrate` to apply pending migrations.
 
 Neither applier descends into subdirectories, so the Better Auth schema at
 `migrations/auth/0001_auth.sql` is **not** applied unless the app turns sign-in
@@ -138,20 +131,17 @@ next request). Prefer idempotent statements (`… if not exists`). Tables with
 per-user data should carry a `user_id text not null` column (TEXT, not UUID — the
 preview dev user id is the string `'dev-user'`).
 
-## Preview ↔ production parity
+## Development ↔ production parity
 
-`getSql()` normalizes result types so both backends return identical, JSON-safe
-shapes: `bigint`/`count(*)` → `number`, `date` → `'YYYY-MM-DD'` string,
-`interval` → text, `numeric` → string. Remaining differences to respect:
+`getSql()` normalizes PostgreSQL result types to JSON-safe shapes:
+`bigint`/`count(*)` → `number`, `date` → `'YYYY-MM-DD'` string, `interval` →
+text, `numeric` → string. Keep these details in mind:
 
 - **`bigint` past 2^53 loses precision** as a number — cast `::text` if you
   ever need huge integers (row counts are fine).
-- **Preview DB is in-memory**: wiped on dev-server restart, single-connection
-  (no lock contention or concurrent-write conflicts), and loads **no
-  extensions** — do not `create extension`; stick to core Postgres.
 - **Neon's pooled endpoint keeps no session state** — don't rely on `SET`,
   `LISTEN/NOTIFY`, or session advisory locks.
-- **Keep `user_id` columns `text`** — preview uses `'dev-user'`, production uses
-  Better Auth's text ids; a `uuid` column breaks preview inserts.
-- Deployed Neon queries traverse the network (and may cold-resume) — avoid
-  N+1 query patterns that feel free against the in-process preview DB.
+- **Keep `user_id` columns `text`** — Better Auth uses text ids; a `uuid` column
+  is incompatible.
+- Neon queries traverse the network (and may cold-resume) — avoid N+1 query
+  patterns.

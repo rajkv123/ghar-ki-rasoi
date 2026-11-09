@@ -7,9 +7,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SITE_NAME } from "@/lib/kitchen/format";
 
-export const Route = createFileRoute("/login")({ component: Login });
+export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>) => {
+    const redirectTo = typeof search.redirectTo === "string" ? search.redirectTo : "/";
+    return {
+      redirectTo:
+        redirectTo === "/kitchen" || /^\/orders\/\d+$/.test(redirectTo) ? redirectTo : "/",
+    };
+  },
+  component: Login,
+});
 
 function Login() {
+  const { redirectTo } = Route.useSearch();
+  const [audience, setAudience] = useState<"choose" | "customer">("choose");
   const [mode, setMode] = useState<"in" | "up">("in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -21,17 +32,41 @@ function Login() {
     <div className="mx-auto grid min-h-[70vh] max-w-md place-items-center px-4 py-12">
       <Card className="w-full space-y-5 p-6">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">
-            {SITE_NAME}
-          </p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">{SITE_NAME}</p>
           <h1 className="mt-2 font-display text-3xl">
-            {mode === "in" ? "Sign in" : "Create account"}
+            {audience === "choose"
+              ? "Choose your sign-in"
+              : mode === "in"
+                ? "Customer sign in"
+                : "Create customer account"}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Orders, subscriptions and kitchen tools need a signed-in table.
+            {audience === "choose"
+              ? "Choose the account type you use."
+              : "Customer accounts are for ordering meals and managing subscriptions."}
           </p>
         </div>
-        {authEnabled ? (
+        {audience === "choose" ? (
+          <div className="grid gap-3">
+            <Button className="min-h-12" onClick={() => setAudience("customer")}>
+              Customer
+            </Button>
+            <Link
+              to="/admin/login"
+              search={{ role: "owner" }}
+              className="grid min-h-12 place-items-center rounded-md border border-border px-4 text-sm font-medium hover:bg-fg/5"
+            >
+              Kitchen Owner
+            </Link>
+            <Link
+              to="/admin/login"
+              search={{ role: "staff" }}
+              className="grid min-h-12 place-items-center rounded-md border border-border px-4 text-sm font-medium hover:bg-fg/5"
+            >
+              Kitchen Staff
+            </Link>
+          </div>
+        ) : authEnabled ? (
           <>
             <div className="space-y-2">
               {GROK_PROVIDERS.map((p) => (
@@ -40,15 +75,13 @@ function Login() {
                   type="button"
                   variant="outline"
                   className="w-full"
-                  onClick={() => signIn(p.providerId, { callbackURL: "/" })}
+                  onClick={() => signIn(p.providerId, { callbackURL: redirectTo })}
                 >
                   Continue with {p.label}
                 </Button>
               ))}
             </div>
-            <p className="text-center text-xs uppercase tracking-[0.16em] text-subtle">
-              or email
-            </p>
+            <p className="text-center text-xs uppercase tracking-[0.16em] text-subtle">or email</p>
             <form
               className="space-y-3"
               onSubmit={async (e) => {
@@ -61,18 +94,18 @@ function Login() {
                       email,
                       password,
                       name: name || email.split("@")[0],
-                      callbackURL: "/",
+                      callbackURL: redirectTo,
                     });
                     if (res.error) throw new Error(res.error.message);
                   } else {
                     const res = await authClient.signIn.email({
                       email,
                       password,
-                      callbackURL: "/",
+                      callbackURL: redirectTo,
                     });
                     if (res.error) throw new Error(res.error.message);
                   }
-                  window.location.href = "/";
+                  window.location.href = redirectTo;
                 } catch (err) {
                   setError(err instanceof Error ? err.message : "Sign-in failed");
                 } finally {
@@ -118,6 +151,17 @@ function Login() {
               onClick={() => setMode(mode === "in" ? "up" : "in")}
             >
               {mode === "in" ? "Need an account? Create one" : "Have an account? Sign in"}
+            </button>
+            <button
+              type="button"
+              className="block text-sm text-muted underline-offset-4 hover:underline"
+              onClick={() => {
+                setAudience("choose");
+                setError(null);
+                setMode("in");
+              }}
+            >
+              Choose a different account type
             </button>
           </>
         ) : (

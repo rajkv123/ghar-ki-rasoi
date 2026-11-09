@@ -20,6 +20,7 @@ import { Route as MenuRouteImport } from './routes/menu'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as SpecialsRouteImport } from './routes/specials'
 import { Route as SubscribeRouteImport } from './routes/subscribe'
+import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as KitchenIndexRouteImport } from './routes/kitchen.index'
 import { Route as KitchenMenuRouteImport } from './routes/kitchen.menu'
 import { Route as KitchenOrdersRouteImport } from './routes/kitchen.orders'
@@ -82,6 +83,11 @@ const SubscribeRoute = SubscribeRouteImport.update({
   path: '/subscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin/login',
+  path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KitchenIndexRoute = KitchenIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -125,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/orders': typeof OrdersRouteWithChildren
   '/specials': typeof SpecialsRoute
   '/subscribe': typeof SubscribeRoute
+  '/admin/login': typeof AdminLoginRoute
   '/kitchen/menu': typeof KitchenMenuRoute
   '/kitchen/orders': typeof KitchenOrdersRoute
   '/kitchen/settings': typeof KitchenSettingsRoute
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/orders': typeof OrdersRouteWithChildren
   '/specials': typeof SpecialsRoute
   '/subscribe': typeof SubscribeRoute
+  '/admin/login': typeof AdminLoginRoute
   '/kitchen/menu': typeof KitchenMenuRoute
   '/kitchen/orders': typeof KitchenOrdersRoute
   '/kitchen/settings': typeof KitchenSettingsRoute
@@ -163,6 +171,7 @@ export interface FileRoutesById {
   '/orders': typeof OrdersRouteWithChildren
   '/specials': typeof SpecialsRoute
   '/subscribe': typeof SubscribeRoute
+  '/admin/login': typeof AdminLoginRoute
   '/kitchen/menu': typeof KitchenMenuRoute
   '/kitchen/orders': typeof KitchenOrdersRoute
   '/kitchen/settings': typeof KitchenSettingsRoute
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
     | '/orders'
     | '/specials'
     | '/subscribe'
+    | '/admin/login'
     | '/kitchen/menu'
     | '/kitchen/orders'
     | '/kitchen/settings'
@@ -202,6 +212,7 @@ export interface FileRouteTypes {
     | '/orders'
     | '/specials'
     | '/subscribe'
+    | '/admin/login'
     | '/kitchen/menu'
     | '/kitchen/orders'
     | '/kitchen/settings'
@@ -221,6 +232,7 @@ export interface FileRouteTypes {
     | '/orders'
     | '/specials'
     | '/subscribe'
+    | '/admin/login'
     | '/kitchen/menu'
     | '/kitchen/orders'
     | '/kitchen/settings'
@@ -241,6 +253,7 @@ export interface RootRouteChildren {
   OrdersRoute: typeof OrdersRouteWithChildren
   SpecialsRoute: typeof SpecialsRoute
   SubscribeRoute: typeof SubscribeRoute
+  AdminLoginRoute: typeof AdminLoginRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -321,6 +334,13 @@ declare module '@tanstack/react-router' {
       path: '/subscribe'
       fullPath: '/subscribe'
       preLoaderRoute: typeof SubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/admin/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/kitchen/': {
@@ -408,6 +428,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrdersRoute: OrdersRouteWithChildren,
   SpecialsRoute: SpecialsRoute,
   SubscribeRoute: SubscribeRoute,
+  AdminLoginRoute: AdminLoginRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

@@ -5,11 +5,10 @@ Use **only** these three — no other method is supported:
 - **Google** and **X** — federated through the Grok broker (pre-wired here). The
   broker federates these two upstreams and nothing else, so do **not** add entries
   to `GROK_PROVIDERS` beyond them (the broker rejects an unknown `idp`).
-- **Email + password** — this app's OWN Better Auth, persisted in your database
-  (never the broker, never mocked). Better Auth is DB-backed in BOTH modes — real
-  Postgres when deployed and the embedded PGLite in the sandbox preview — so
-  email/password accounts are stored and survive across requests, **in preview
-  too**. It's off by default. Enable it by editing **only**
+- **Email + password** — this app's OWN Better Auth, persisted in your configured
+  PostgreSQL database (never the broker, never mocked). PostgreSQL is required
+  in both deployed and preview environments, so email/password accounts survive
+  across requests. It's off by default. Enable it by editing **only**
   `src/lib/auth/email-password.ts`:
 
   ```ts
